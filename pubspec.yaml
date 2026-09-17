@@ -1,0 +1,22 @@
+name: async_state_view
+description: Render retained asynchronous state without owning or restarting the work.
+version: 0.1.0
+repository: https://github.com/stephane-archer/async_state_view
+issue_tracker: https://github.com/stephane-archer/async_state_view/issues
+
+topics:
+  - async-state
+  - flutter-widget
+  - state-management
+
+environment:
+  sdk: '>=3.1.5 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+dev_dependencies:
+  flutter_lints: ^3.0.2
+  flutter_test:
+    sdk: flutter
