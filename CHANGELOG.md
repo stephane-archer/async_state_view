@@ -22,6 +22,8 @@
   - `toLoading` to refresh, and `toError` to report a failure, while keeping
     the current value.
   - `mapValue` to transform a state's value while keeping its kind.
+  - `withoutCarriedValue` to drop the value a loading or error state carries,
+    such as to skip rebuilds on progress updates.
   - The `hasValue`, `valueOrNull` and `requireValue` accessors. Without a
     value, `requireValue` rethrows an error with its stack trace.
 - Add `AsyncLoading.withValue` and `AsyncError.withValue` to carry a value:
@@ -35,6 +37,8 @@
   builder renders exactly as in 0.1.0 until it opts in.
 - Add the `AsyncStateErrorWithValueBuilder` typedef for `errorWithValue`.
 - States describe themselves in `toString`.
+- Document reporting progress from a stream, with a complete `ChangeNotifier`
+  example.
 
 ## 0.1.0
 

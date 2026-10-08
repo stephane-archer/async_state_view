@@ -1,7 +1,8 @@
 /// The retained outcome of asynchronous work, independent of UI subscriptions.
 ///
 /// States compare by value, so a listener that selects one part of a larger
-/// state with [mapValue] can skip rebuilds while that part is unchanged.
+/// state with [mapValue] can skip rebuilds while that part is unchanged. Call
+/// [withoutCarriedValue] first to also skip them on progress updates.
 /// Equality ignores the type argument, so `const AsyncLoading()` equals an
 /// `AsyncLoading<User>()`.
 sealed class AsyncState<T> {
@@ -51,6 +52,20 @@ sealed class AsyncState<T> {
   /// run until its first update.
   AsyncLoading<T> toLoading() =>
       hasValue ? AsyncLoading<T>.withValue(requireValue) : AsyncLoading<T>();
+
+  /// This state without the value a loading or error state carries.
+  ///
+  /// The result of a loading state or an error has no value, and an error
+  /// keeps its error and stack trace; data is returned as is. Afterwards, only
+  /// an [AsyncData] has a value.
+  ///
+  /// The dropped value can be partial progress, or a previous result kept
+  /// while refreshing or after a failed refresh.
+  ///
+  /// A selector that compares by `==` can call it before [mapValue] to skip
+  /// rebuilds on progress updates. Called first, it also keeps the transform
+  /// from running on partial progress.
+  AsyncState<T> withoutCarriedValue();
 }
 
 /// An asynchronous operation whose result is not yet available.
@@ -103,6 +118,9 @@ final class AsyncLoading<T> extends AsyncState<T> {
   @override
   String toString() =>
       hasValue ? 'AsyncLoading<$T>.withValue($_value)' : 'AsyncLoading<$T>()';
+
+  @override
+  AsyncLoading<T> withoutCarriedValue() => hasValue ? AsyncLoading<T>() : this;
 }
 
 /// An asynchronous operation that completed with [value].
@@ -136,6 +154,9 @@ final class AsyncData<T> extends AsyncState<T> {
 
   @override
   String toString() => 'AsyncData<$T>($value)';
+
+  @override
+  AsyncData<T> withoutCarriedValue() => this;
 }
 
 /// An asynchronous operation that failed with [error] and [stackTrace].
@@ -195,4 +216,8 @@ final class AsyncError<T> extends AsyncState<T> {
   String toString() => hasValue
       ? 'AsyncError<$T>.withValue($error, $_value)'
       : 'AsyncError<$T>($error)';
+
+  @override
+  AsyncError<T> withoutCarriedValue() =>
+      hasValue ? AsyncError<T>(error, stackTrace) : this;
 }

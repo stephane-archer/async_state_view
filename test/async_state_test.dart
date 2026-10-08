@@ -282,6 +282,69 @@ void main() {
     });
   });
 
+  group('withoutCarriedValue', () {
+    test('drops the value of a loading state', () {
+      const empty = AsyncLoading<int>();
+      expect(const AsyncLoading<int>.withValue(3).withoutCarriedValue(), empty);
+      expect(const AsyncLoading<int?>.withValue(null).withoutCarriedValue(),
+          const AsyncLoading<int?>());
+      expect(empty.withoutCarriedValue(), same(empty));
+    });
+
+    test('returns data as is', () {
+      const data = AsyncData(42);
+      expect(data.withoutCarriedValue(), same(data));
+    });
+
+    test('drops the value of an error and keeps the error', () {
+      final failed = AsyncError<int>(error, stackTrace);
+      final dropped =
+          AsyncError<int>.withValue(error, stackTrace, 3).withoutCarriedValue();
+      expect(dropped, failed);
+      expect(dropped.hasValue, isFalse);
+      expect(dropped.error, same(error));
+      expect(dropped.stackTrace, same(stackTrace));
+      expect(failed.withoutCarriedValue(), same(failed));
+      expect(
+          AsyncError<int?>.withValue(error, stackTrace, null)
+              .withoutCarriedValue(),
+          AsyncError<int?>(error, stackTrace));
+    });
+
+    test('keeps the type argument', () {
+      const AsyncState<int> loading = AsyncLoading.withValue(3);
+      final AsyncState<int> failed = AsyncError.withValue(error, stackTrace, 3);
+      expect(loading.withoutCarriedValue().runtimeType, AsyncLoading<int>);
+      expect(failed.withoutCarriedValue().runtimeType, AsyncError<int>);
+    });
+
+    test('makes progress updates equal', () {
+      const AsyncState<int> before = AsyncLoading.withValue(1);
+      const AsyncState<int> after = AsyncLoading.withValue(2);
+      expect(after, isNot(before));
+      expect(after.withoutCarriedValue(), before.withoutCarriedValue());
+    });
+
+    test('makes errors with different kept values equal', () {
+      final AsyncState<int> before = AsyncError.withValue(error, stackTrace, 1);
+      final AsyncState<int> after = AsyncError.withValue(error, stackTrace, 2);
+      expect(after, isNot(before));
+      expect(after.withoutCarriedValue(), before.withoutCarriedValue());
+    });
+
+    test('keeps mapValue from running on a carried value', () {
+      final List<AsyncState<int>> carrying = [
+        const AsyncLoading.withValue(1),
+        AsyncError.withValue(error, stackTrace, 1),
+      ];
+      for (final state in carrying) {
+        state
+            .withoutCarriedValue()
+            .mapValue<int>((_) => fail('transform ran on $state'));
+      }
+    });
+  });
+
   test('describes each state', () {
     expect(const AsyncLoading<int>().toString(), 'AsyncLoading<int>()');
     expect(const AsyncLoading<int>.withValue(3).toString(),

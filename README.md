@@ -54,6 +54,7 @@ state changes.
 This example loads a user when the widget starts and lets the user retry after
 an error:
 
+<!-- excerpt: test/readme/user_page.dart#user-page -->
 ```dart
 import 'dart:async';
 
@@ -126,7 +127,8 @@ existing state-management mechanism:
 
 - Before starting or restarting work: `const AsyncLoading()`, or
   `state.toLoading()` to keep the current value during a refresh
-- While work reports partial results: `AsyncLoading.withValue(value)`
+- While work reports partial results: `AsyncLoading.withValue(value)`, as in
+  [Reporting progress from a stream](#reporting-progress-from-a-stream)
 - After the Future succeeds: `AsyncData(value)`
 - After the Future fails: `AsyncError(error, stackTrace)`, or
   `state.toError(error, stackTrace)` to keep the current value
@@ -157,39 +159,17 @@ To refresh while keeping the current value visible, publish `toLoading()`. Data
 becomes loading with its value, and so does an error that
 [kept one](#keeping-a-value-after-an-error):
 
+<!-- excerpt: test/readme/user_refresh.dart#to-loading -->
 ```dart
 _user = _user.toLoading();
 ```
 
-For partial progress, publish each intermediate value:
+`AsyncStateBuilder` shows the carried value only when you give it a
+`loadingWithValue` builder. Without one, it renders `loading`, as it does for a
+loading state without a value. To keep a refreshing result visible as is, pass
+the same function as `data`:
 
-```dart
-// Each progress event publishes the totals so far; the last one completes.
-_scan = event.isComplete
-    ? AsyncData(event.totals)
-    : AsyncLoading.withValue(event.totals);
-```
-
-Start or restart such work with `const AsyncLoading()` rather than
-`toLoading()`. Otherwise the value it keeps, such as the totals of a previous
-or abandoned run, is shown as progress of the new run until its first event.
-
-`AsyncStateBuilder` shows that value only when you give it a `loadingWithValue`
-builder. Without one, it renders `loading`, as it does for a loading state
-without a value:
-
-```dart
-AsyncStateBuilder<Totals>(
-  state: _scan,
-  loading: (_) => const CircularProgressIndicator(),
-  loadingWithValue: (_, totals) => Text('${totals.count} so far…'),
-  data: (_, totals) => Text('${totals.count} in total'),
-  error: (_, error, stackTrace) => Text('Failed: $error'),
-)
-```
-
-To keep a refreshing result visible as is, pass the same function as `data`:
-
+<!-- excerpt: test/readme/user_refresh.dart#user-view -->
 ```dart
 Widget userView(BuildContext context, User user) => Text('Hello, ${user.name}');
 
@@ -202,11 +182,111 @@ AsyncStateBuilder<User>(
 )
 ```
 
+### Reporting progress from a stream
+
+To report partial progress, publish each intermediate value as a loading state,
+and the last one as data once the work is done. A stream signals its end with
+`onDone` after its last event, so that is where the carried value becomes the
+result.
+
+Here `ScanController`, a `ChangeNotifier` in `scan_controller.dart`, publishes
+the running totals that `scanner.scan()` emits:
+
+<!-- excerpt: test/readme/scan_controller.dart#scan-controller -->
+```dart
+import 'dart:async';
+
+import 'package:async_state_view/async_state_view.dart';
+import 'package:flutter/foundation.dart';
+
+class ScanController extends ChangeNotifier {
+  ScanController(this.scanner);
+
+  final Scanner scanner;
+  AsyncState<Totals> _scan = const AsyncLoading();
+  StreamSubscription<Totals>? _subscription;
+
+  AsyncState<Totals> get scan => _scan;
+
+  void startScan() {
+    // Cancelling stops the previous run's callbacks, onDone included, so only
+    // this run's events reach _scan.
+    unawaited(_subscription?.cancel());
+    // Not toLoading, which would keep the previous run's totals and show them
+    // as progress of this run until its first event.
+    _scan = const AsyncLoading();
+    notifyListeners();
+    _subscription = scanner.scan().listen(
+      (totals) {
+        _scan = AsyncLoading.withValue(totals);
+        notifyListeners();
+      },
+      onError: (Object error, StackTrace stackTrace) {
+        // Not toError, which would keep the partial totals as if they were
+        // a previous result.
+        _scan = AsyncError(error, stackTrace);
+        notifyListeners();
+      },
+      onDone: () {
+        // A scan that ends without an event found nothing.
+        _scan = AsyncData(_scan.valueOrNull ?? Totals.empty);
+        notifyListeners();
+      },
+      // Ends the run at the first error, so neither a later event nor onDone
+      // replaces it.
+      cancelOnError: true,
+    );
+  }
+
+  @override
+  void dispose() {
+    unawaited(_subscription?.cancel());
+    super.dispose();
+  }
+}
+```
+
+`Totals` and `Scanner` represent your own model and data source. `scan` stays
+loading until `startScan` runs, so call it when you create the controller or
+from the action that starts a scan.
+
+`ScanView` rebuilds through a `ListenableBuilder` when the controller notifies,
+and shows the progress with its `loadingWithValue` builder:
+
+<!-- excerpt: test/readme/scan_view.dart#scan-view -->
+```dart
+import 'package:async_state_view/async_state_view.dart';
+import 'package:flutter/material.dart';
+
+import 'scan_controller.dart';
+
+class ScanView extends StatelessWidget {
+  const ScanView({super.key, required this.controller});
+
+  final ScanController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: controller,
+      builder: (context, _) => AsyncStateBuilder<Totals>(
+        state: controller.scan,
+        loading: (_) => const CircularProgressIndicator(),
+        loadingWithValue: (_, totals) => Text('${totals.count} so far…'),
+        data: (_, totals) => Text('${totals.count} in total'),
+        error: (_, error, stackTrace) => Text('Failed: $error'),
+      ),
+    );
+  }
+}
+```
+
 ## Keeping a value after an error
 
 An error can keep a value too, such as the previous result after a failed
 refresh. Publish `toError` instead of `AsyncError` to keep the current value:
 
+<!-- excerpt: test/readme/user_refresh.dart#to-error -->
 ```dart
 try {
   final user = await userRepository.fetchCurrentUser();
@@ -219,6 +299,7 @@ try {
 Give `AsyncStateBuilder` an `errorWithValue` builder to show the value with the
 error. Without one, the `error` builder is used.
 
+<!-- excerpt: test/readme/user_refresh.dart#error-with-value -->
 ```dart
 AsyncStateBuilder<User>(
   state: _user,
@@ -249,13 +330,16 @@ the caller.
 
 States compare by value, so `mapValue` also selects the part of a larger state
 a widget depends on. With a selector that compares by `==`, such as Provider's
-`context.select`, the widget only rebuilds when that part changes:
+`context.select`, the widget only rebuilds when that part changes. Here a
+`ChangeNotifierProvider` above the widget provides the `ScanController` from
+[Reporting progress from a stream](#reporting-progress-from-a-stream):
 
+<!-- excerpt: test/readme/scan_select.dart#found -->
 ```dart
 // Rebuilds when `found` flips or the scan ends, not on every progress update.
 final found = context.select(
   (ScanController controller) =>
-      controller.scan.mapValue((scan) => scan.found),
+      controller.scan.mapValue((totals) => totals.count > 0),
 );
 ```
 
@@ -263,6 +347,24 @@ The comparison is only as precise as the value's own `==`. A value type that
 keeps identity equality makes every new state differ, so the widget rebuilds on
 each update. Map to a value that compares by value, such as a `bool`, a number,
 or a class that overrides `==`.
+
+A widget that renders only final results does not need the value carried
+while loading, which changes with each progress update. Drop it with
+`withoutCarriedValue` before mapping, so progress updates give equal states:
+
+<!-- excerpt: test/readme/scan_select.dart#count -->
+```dart
+// Rebuilds when the scan starts, ends or fails, not on progress updates.
+final count = context.select(
+  (ScanController controller) => controller.scan
+      .withoutCarriedValue()
+      .mapValue((totals) => totals.count),
+);
+```
+
+`withoutCarriedValue` also drops a previous result kept by `toLoading` or
+`toError`, so the widget no longer sees it while refreshing or after a failed
+refresh.
 
 Outside widgets, these accessors read the value of any kind of state:
 
@@ -281,8 +383,9 @@ An `AsyncError` exposes its `error` and `stackTrace` fields.
 In a `switch`, match a carried value with `valueOrNull` and a null-check
 pattern:
 
+<!-- excerpt: test/readme/scan_switch.dart#switch -->
 ```dart
-final label = switch (_scan) {
+final label = switch (controller.scan) {
   AsyncLoading(valueOrNull: final totals?) => '${totals.count} so far…',
   AsyncLoading() => 'Starting…',
   AsyncData(:final value) => '${value.count} in total',
@@ -293,6 +396,7 @@ final label = switch (_scan) {
 When the value type is nullable, a null value does not match `final totals?`.
 Match `hasValue: true` instead:
 
+<!-- excerpt: test/readme/scan_switch.dart#nullable-case -->
 ```dart
 AsyncLoading(hasValue: true, :final valueOrNull) => 'So far: $valueOrNull',
 ```
@@ -370,7 +474,9 @@ extra code.
 
 Use `async_builder` or another Future/Stream builder when you want the widget to
 subscribe directly, especially for streams. `AsyncStateBuilder` has no Stream
-support and does not listen for changes by itself.
+support and does not listen for changes by itself. To render a stream with it,
+listen to the stream in your state owner, as in
+[Reporting progress from a stream](#reporting-progress-from-a-stream).
 
 Use `flutter_async_value` if you want this state-first approach plus an idle
 state, typed errors, per-state `map`/`maybeMap` callbacks, or result helpers.
